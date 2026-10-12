@@ -36,6 +36,7 @@
     font-size: 15px;
     border: none;
     border-radius: 10px;
+    touch-action: manipulation;
     background: var(--tg-theme-button-color, #2481cc);
     color: var(--tg-theme-button-text-color, #ffffff);
   }
@@ -44,6 +45,7 @@
     color: var(--tg-theme-text-color, #000000);
   }
   .wide { width: 100%; max-width: 420px; }
+  #status { margin-top: 10px; font-size: 13px; opacity: 0.7; min-height: 18px; }
 </style>
 </head>
 <body>
@@ -52,12 +54,13 @@
   <canvas id="field" width="480" height="480"></canvas>
 
   <div class="buttons">
-    <button id="btnPlay">▶ Старт</button>
-    <button id="btnStep" class="secondary">Шаг</button>
-    <button id="btnRandom" class="secondary">Случайно</button>
-    <button id="btnClear" class="secondary">Очистить</button>
-    <button id="btnSend" class="wide">📤 Отправить в чат таблицей</button>
+    <button id="btnPlay" type="button">▶ Старт</button>
+    <button id="btnStep" type="button" class="secondary">Шаг</button>
+    <button id="btnRandom" type="button" class="secondary">Случайно</button>
+    <button id="btnClear" type="button" class="secondary">Очистить</button>
+    <button id="btnSend" type="button" class="wide">📤 Отправить в чат таблицей</button>
   </div>
+  <div id="status"></div>
 
 <script>
   const tg = window.Telegram.WebApp;
@@ -69,6 +72,7 @@
   const canvas = document.getElementById("field");
   const ctx = canvas.getContext("2d");
   const info = document.getElementById("info");
+  const statusEl = document.getElementById("status");
 
   let grid = emptyGrid();
   let generation = 0;
@@ -195,6 +199,9 @@
   window.addEventListener("pointerup", function () {
     painting = false;
   });
+  window.addEventListener("pointercancel", function () {
+    painting = false;
+  });
 
   // Кнопки
   const btnPlay = document.getElementById("btnPlay");
@@ -205,21 +212,21 @@
     btnPlay.textContent = "▶ Старт";
   }
 
-  btnPlay.onclick = function () {
+  btnPlay.addEventListener("click", function () {
     if (timer) {
       stop();
       return;
     }
     timer = setInterval(step, 250);
     btnPlay.textContent = "⏸ Пауза";
-  };
+  });
 
-  document.getElementById("btnStep").onclick = function () {
+  document.getElementById("btnStep").addEventListener("click", function () {
     stop();
     step();
-  };
+  });
 
-  document.getElementById("btnRandom").onclick = function () {
+  document.getElementById("btnRandom").addEventListener("click", function () {
     stop();
     for (let r = 0; r < N; r++) {
       for (let c = 0; c < N; c++) {
@@ -228,27 +235,30 @@
     }
     generation = 0;
     draw();
-  };
+  });
 
-  document.getElementById("btnClear").onclick = function () {
+  document.getElementById("btnClear").addEventListener("click", function () {
     stop();
     grid = emptyGrid();
     generation = 0;
     draw();
-  };
+  });
 
-  document.getElementById("btnSend").onclick = function () {
+  document.getElementById("btnSend").addEventListener("click", function () {
     stop();
     const rows = grid.map(function (row) {
       return row.join("");
     });
     const payload = JSON.stringify({ gen: generation, g: rows });
-    if (tg.initData) {
+    statusEl.textContent = "Отправляю...";
+    try {
+      // Для кнопок клавиатуры initData пустая - это нормально, поэтому ее не проверяем
       tg.sendData(payload);   // отправит данные боту и закроет мини-апп
-    } else {
-      alert("Откройте мини-апп внутри Telegram через кнопку бота");
+    } catch (err) {
+      statusEl.textContent = "Не удалось отправить: " + err.message;
+      alert("Отправка работает только если открыть игру кнопкой внизу чата с ботом");
     }
-  };
+  });
 
   setGlider();
   draw();
