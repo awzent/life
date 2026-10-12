@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Игра «Жизнь»</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  body {
+    margin: 0;
+    padding: 12px;
+    font-family: system-ui, sans-serif;
+    text-align: center;
+    background: var(--tg-theme-bg-color, #ffffff);
+    color: var(--tg-theme-text-color, #000000);
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  h1 { font-size: 20px; margin: 4px 0 8px; }
+  #info { margin-bottom: 8px; font-size: 14px; opacity: 0.8; }
+  canvas {
+    width: min(92vw, 420px);
+    height: min(92vw, 420px);
+    border-radius: 8px;
+    touch-action: none;
+  }
+  .buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 12px;
+  }
+  button {
+    padding: 10px 14px;
+    font-size: 15px;
+    border: none;
+    border-radius: 10px;
+    background: var(--tg-theme-button-color, #2481cc);
+    color: var(--tg-theme-button-text-color, #ffffff);
+  }
+  button.secondary {
+    background: var(--tg-theme-secondary-bg-color, #e8e8e8);
+    color: var(--tg-theme-text-color, #000000);
+  }
+  .wide { width: 100%; max-width: 420px; }
+</style>
+</head>
+<body>
+  <h1>🧬 Игра «Жизнь»</h1>
+  <div id="info">Поколение: 0 | Живых: 0</div>
+  <canvas id="field" width="480" height="480"></canvas>
+
+  <div class="buttons">
+    <button id="btnPlay">▶ Старт</button>
+    <button id="btnStep" class="secondary">Шаг</button>
+    <button id="btnRandom" class="secondary">Случайно</button>
+    <button id="btnClear" class="secondary">Очистить</button>
+    <button id="btnSend" class="wide">📤 Отправить в чат таблицей</button>
+  </div>
+
+<script>
+  const tg = window.Telegram.WebApp;
+  tg.ready();
+  tg.expand();
+
+  const N = 16;               // размер поля N x N
+  const CELL = 480 / N;       // размер клетки в пикселях canvas
+  const canvas = document.getElementById("field");
+  const ctx = canvas.getContext("2d");
+  const info = document.getElementById("info");
+
+  let grid = emptyGrid();
+  let generation = 0;
+  let timer = null;
+
+  function emptyGrid() {
+    return Array.from({ length: N }, function () {
+      return Array(N).fill(0);
+    });
+  }
+
+  // Стартовая фигура: планер
+  function setGlider() {
+    grid = emptyGrid();
+    const cells = [[0, 1], [1, 2], [2, 0], [2, 1], [2, 2]];
+    cells.forEach(function (p) {
+      grid[p[0] + 1][p[1] + 1] = 1;
+    });
+    generation = 0;
+  }
+
+  function countAlive() {
+    let total = 0;
+    for (let r = 0; r < N; r++) {
+      for (let c = 0; c < N; c++) {
+        total += grid[r][c];
+      }
+    }
+    return total;
+  }
+
+  // Поле замкнутое: края соединены (тор)
+  function step() {
+    const next = emptyGrid();
+    for (let r = 0; r < N; r++) {
+      for (let c = 0; c < N; c++) {
+        let n = 0;
+        for (let dr = -1; dr <= 1; dr++) {
+          for (let dc = -1; dc <= 1; dc++) {
+            if (dr === 0 && dc === 0) continue;
+            n += grid[(r + dr + N) % N][(c + dc + N) % N];
+          }
+        }
+        if (grid[r][c]) {
+          next[r][c] = (n === 2 || n === 3) ? 1 : 0;
+        } else {
+          next[r][c] = (n === 3) ? 1 : 0;
+        }
+      }
+    }
+    grid = next;
+    generation++;
+    draw();
+  }
+
+  function css(name, fallback) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  }
+
+  function draw() {
+    const bg = css("--tg-theme-secondary-bg-color", "#eeeeee");
+    const accent = css("--tg-theme-button-color", "#2481cc");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, 480, 480);
+
+    ctx.fillStyle = accent;
+    for (let r = 0; r < N; r++) {
+      for (let c = 0; c < N; c++) {
+        if (grid[r][c]) {
+          ctx.fillRect(c * CELL + 1, r * CELL + 1, CELL - 2, CELL - 2);
+        }
+      }
+    }
+
+    ctx.strokeStyle = "rgba(128,128,128,0.25)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= N; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * CELL, 0);
+      ctx.lineTo(i * CELL, 480);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, i * CELL);
+      ctx.lineTo(480, i * CELL);
+      ctx.stroke();
+    }
+
+    info.textContent = "Поколение: " + generation + " | Живых: " + countAlive();
+  }
+
+  // Рисование пальцем: нажал - задал режим, ведешь - красишь
+  let painting = false;
+  let paintValue = 1;
+
+  function cellFromEvent(e) {
+    const rect = canvas.getBoundingClientRect();
+    const c = Math.floor(((e.clientX - rect.left) / rect.width) * N);
+    const r = Math.floor(((e.clientY - rect.top) / rect.height) * N);
+    if (r >= 0 && r < N && c >= 0 && c < N) {
+      return [r, c];
+    }
+    return null;
+  }
+
+  canvas.addEventListener("pointerdown", function (e) {
+    const pos = cellFromEvent(e);
+    if (!pos) return;
+    painting = true;
+    paintValue = grid[pos[0]][pos[1]] ? 0 : 1;
+    grid[pos[0]][pos[1]] = paintValue;
+    draw();
+  });
+
+  canvas.addEventListener("pointermove", function (e) {
+    if (!painting) return;
+    const pos = cellFromEvent(e);
+    if (pos && grid[pos[0]][pos[1]] !== paintValue) {
+      grid[pos[0]][pos[1]] = paintValue;
+      draw();
+    }
+  });
+
+  window.addEventListener("pointerup", function () {
+    painting = false;
+  });
+
+  // Кнопки
+  const btnPlay = document.getElementById("btnPlay");
+
+  function stop() {
+    clearInterval(timer);
+    timer = null;
+    btnPlay.textContent = "▶ Старт";
+  }
+
+  btnPlay.onclick = function () {
+    if (timer) {
+      stop();
+      return;
+    }
+    timer = setInterval(step, 250);
+    btnPlay.textContent = "⏸ Пауза";
+  };
+
+  document.getElementById("btnStep").onclick = function () {
+    stop();
+    step();
+  };
+
+  document.getElementById("btnRandom").onclick = function () {
+    stop();
+    for (let r = 0; r < N; r++) {
+      for (let c = 0; c < N; c++) {
+        grid[r][c] = Math.random() < 0.28 ? 1 : 0;
+      }
+    }
+    generation = 0;
+    draw();
+  };
+
+  document.getElementById("btnClear").onclick = function () {
+    stop();
+    grid = emptyGrid();
+    generation = 0;
+    draw();
+  };
+
+  document.getElementById("btnSend").onclick = function () {
+    stop();
+    const rows = grid.map(function (row) {
+      return row.join("");
+    });
+    const payload = JSON.stringify({ gen: generation, g: rows });
+    if (tg.initData) {
+      tg.sendData(payload);   // отправит данные боту и закроет мини-апп
+    } else {
+      alert("Откройте мини-апп внутри Telegram через кнопку бота");
+    }
+  };
+
+  setGlider();
+  draw();
+</script>
+</body>
+</html>
