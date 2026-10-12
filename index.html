@@ -15,6 +15,7 @@
     color: var(--tg-theme-text-color, #000000);
     -webkit-user-select: none;
     user-select: none;
+    -webkit-touch-callout: none;
   }
   h1 { font-size: 20px; margin: 4px 0 8px; }
   #info { margin-bottom: 8px; font-size: 14px; opacity: 0.8; }
@@ -37,6 +38,7 @@
     border: none;
     border-radius: 10px;
     touch-action: manipulation;
+    -webkit-appearance: none;
     background: var(--tg-theme-button-color, #2481cc);
     color: var(--tg-theme-button-text-color, #ffffff);
   }
@@ -58,25 +60,36 @@
     <button id="btnStep" type="button" class="secondary">Шаг</button>
     <button id="btnRandom" type="button" class="secondary">Случайно</button>
     <button id="btnClear" type="button" class="secondary">Очистить</button>
-    <button id="btnSend" type="button" class="wide">📤 Отправить в чат таблицей</button>
+    <button id="btnSend" type="button" class="wide">📤 Отправить в чат (интерактивно)</button>
   </div>
   <div id="status"></div>
 
 <script>
+  const statusEl = document.getElementById("status");
+
+  // Показываем JS-ошибки прямо на экране (удобно для отладки на iPhone)
+  window.addEventListener("error", function (e) {
+    statusEl.textContent = "Ошибка: " + e.message;
+  });
+
   const tg = window.Telegram.WebApp;
   tg.ready();
   tg.expand();
+  try {
+    tg.disableVerticalSwipes();   // чтобы свайп по полю не сворачивал мини-апп
+  } catch (err) {}
 
   const N = 16;               // размер поля N x N
   const CELL = 480 / N;       // размер клетки в пикселях canvas
+  const STEP_MS = 250;        // пауза между поколениями
   const canvas = document.getElementById("field");
   const ctx = canvas.getContext("2d");
   const info = document.getElementById("info");
-  const statusEl = document.getElementById("status");
 
   let grid = emptyGrid();
   let generation = 0;
-  let timer = null;
+  let running = false;
+  let lastTick = 0;
 
   function emptyGrid() {
     return Array.from({ length: N }, function () {
@@ -179,6 +192,7 @@
   }
 
   canvas.addEventListener("pointerdown", function (e) {
+    e.preventDefault();
     const pos = cellFromEvent(e);
     if (!pos) return;
     painting = true;
@@ -189,6 +203,7 @@
 
   canvas.addEventListener("pointermove", function (e) {
     if (!painting) return;
+    e.preventDefault();
     const pos = cellFromEvent(e);
     if (pos && grid[pos[0]][pos[1]] !== paintValue) {
       grid[pos[0]][pos[1]] = paintValue;
@@ -203,22 +218,32 @@
     painting = false;
   });
 
-  // Кнопки
+  // Анимация через requestAnimationFrame (надежнее на iPhone)
   const btnPlay = document.getElementById("btnPlay");
 
+  function loop(ts) {
+    if (!running) return;
+    if (ts - lastTick >= STEP_MS) {
+      lastTick = ts;
+      step();
+    }
+    requestAnimationFrame(loop);
+  }
+
   function stop() {
-    clearInterval(timer);
-    timer = null;
+    running = false;
     btnPlay.textContent = "▶ Старт";
   }
 
   btnPlay.addEventListener("click", function () {
-    if (timer) {
+    if (running) {
       stop();
       return;
     }
-    timer = setInterval(step, 250);
+    running = true;
+    lastTick = 0;
     btnPlay.textContent = "⏸ Пауза";
+    requestAnimationFrame(loop);
   });
 
   document.getElementById("btnStep").addEventListener("click", function () {
@@ -256,7 +281,6 @@
       tg.sendData(payload);   // отправит данные боту и закроет мини-апп
     } catch (err) {
       statusEl.textContent = "Не удалось отправить: " + err.message;
-      alert("Отправка работает только если открыть игру кнопкой внизу чата с ботом");
     }
   });
 
