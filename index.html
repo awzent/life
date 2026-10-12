@@ -2,13 +2,19 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Игра «Жизнь»</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-  body {
+  html, body {
     margin: 0;
-    padding: 12px;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+  body {
+    padding: 8px;
+    box-sizing: border-box;
     font-family: system-ui, sans-serif;
     text-align: center;
     background: var(--tg-theme-bg-color, #ffffff);
@@ -17,24 +23,29 @@
     user-select: none;
     -webkit-touch-callout: none;
   }
-  h1 { font-size: 20px; margin: 4px 0 8px; }
-  #info { margin-bottom: 8px; font-size: 14px; opacity: 0.8; }
+  #info {
+    font-size: 15px;
+    font-weight: 600;
+    padding: 4px 0 8px;
+  }
   canvas {
-    width: min(92vw, 420px);
-    height: min(92vw, 420px);
+    display: block;
+    margin: 0 auto;
     border-radius: 8px;
     touch-action: none;
   }
-  .buttons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    justify-content: center;
-    margin-top: 12px;
+  #controls {
+    margin: 8px auto 0;
+    max-width: 480px;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
   }
   button {
-    padding: 10px 14px;
-    font-size: 15px;
+    padding: 10px 4px;
+    font-size: 14px;
     border: none;
     border-radius: 10px;
     touch-action: manipulation;
@@ -46,26 +57,38 @@
     background: var(--tg-theme-secondary-bg-color, #e8e8e8);
     color: var(--tg-theme-text-color, #000000);
   }
-  .wide { width: 100%; max-width: 420px; }
-  #status { margin-top: 10px; font-size: 13px; opacity: 0.7; min-height: 18px; }
+  #btnSend {
+    width: 100%;
+    margin-top: 6px;
+  }
+  #status {
+    margin-top: 6px;
+    font-size: 12px;
+    opacity: 0.7;
+    min-height: 16px;
+  }
 </style>
 </head>
 <body>
-  <h1>🧬 Игра «Жизнь»</h1>
-  <div id="info">Поколение: 0 | Живых: 0</div>
+  <div id="info">🧬 Жизнь | Поколение: 0 | Живых: 0</div>
   <canvas id="field" width="480" height="480"></canvas>
 
-  <div class="buttons">
-    <button id="btnPlay" type="button">▶ Старт</button>
-    <button id="btnStep" type="button" class="secondary">Шаг</button>
-    <button id="btnRandom" type="button" class="secondary">Случайно</button>
-    <button id="btnClear" type="button" class="secondary">Очистить</button>
-    <button id="btnSend" type="button" class="wide">📤 Отправить в чат (интерактивно)</button>
+  <div id="controls">
+    <div class="row">
+      <button id="btnPlay" type="button">▶ Старт</button>
+      <button id="btnStep" type="button" class="secondary">Шаг</button>
+      <button id="btnRandom" type="button" class="secondary">Случайно</button>
+      <button id="btnClear" type="button" class="secondary">Очистить</button>
+    </div>
+    <button id="btnSend" type="button">📤 Отправить в чат</button>
   </div>
   <div id="status"></div>
 
 <script>
+(function () {
   const statusEl = document.getElementById("status");
+  const HINT = "Нажимай на клетки, чтобы задать начальные точки";
+  statusEl.textContent = HINT;
 
   // Показываем JS-ошибки прямо на экране (удобно для отладки на iPhone)
   window.addEventListener("error", function (e) {
@@ -85,6 +108,7 @@
   const canvas = document.getElementById("field");
   const ctx = canvas.getContext("2d");
   const info = document.getElementById("info");
+  const controls = document.getElementById("controls");
 
   let grid = emptyGrid();
   let generation = 0;
@@ -117,6 +141,16 @@
     return total;
   }
 
+  // Подгоняем размер поля под экран, чтобы все влезало без прокрутки
+  function fit() {
+    const used = info.offsetHeight + controls.offsetHeight + statusEl.offsetHeight + 40;
+    const byHeight = window.innerHeight - used;
+    const byWidth = window.innerWidth - 16;
+    const size = Math.max(160, Math.min(byWidth, byHeight, 480));
+    canvas.style.width = size + "px";
+    canvas.style.height = size + "px";
+  }
+
   // Поле замкнутое: края соединены (тор)
   function step() {
     const next = emptyGrid();
@@ -141,14 +175,14 @@
     draw();
   }
 
-  function css(name, fallback) {
+  function readVar(name, fallback) {
     const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     return v || fallback;
   }
 
   function draw() {
-    const bg = css("--tg-theme-secondary-bg-color", "#eeeeee");
-    const accent = css("--tg-theme-button-color", "#2481cc");
+    const bg = readVar("--tg-theme-secondary-bg-color", "#eeeeee");
+    const accent = readVar("--tg-theme-button-color", "#2481cc");
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, 480, 480);
 
@@ -161,7 +195,7 @@
       }
     }
 
-    ctx.strokeStyle = "rgba(128,128,128,0.25)";
+    ctx.strokeStyle = "rgba(128,128,128,0.35)";
     ctx.lineWidth = 1;
     for (let i = 0; i <= N; i++) {
       ctx.beginPath();
@@ -174,7 +208,7 @@
       ctx.stroke();
     }
 
-    info.textContent = "Поколение: " + generation + " | Живых: " + countAlive();
+    info.textContent = "🧬 Жизнь | Поколение: " + generation + " | Живых: " + countAlive();
   }
 
   // Рисование пальцем: нажал - задал режим, ведешь - красишь
@@ -267,6 +301,7 @@
     grid = emptyGrid();
     generation = 0;
     draw();
+    statusEl.textContent = HINT;
   });
 
   document.getElementById("btnSend").addEventListener("click", function () {
@@ -284,8 +319,16 @@
     }
   });
 
+  window.addEventListener("resize", fit);
+  try {
+    tg.onEvent("viewportChanged", fit);
+  } catch (err) {}
+
   setGlider();
+  fit();
   draw();
+  setTimeout(fit, 300);   // повторная подгонка, когда Telegram закончит раскрывать окно
+})();
 </script>
 </body>
 </html>
